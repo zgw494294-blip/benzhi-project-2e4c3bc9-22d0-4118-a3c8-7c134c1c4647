@@ -182,16 +182,9 @@ func (s *Service) VerifyCredential(ctx context.Context, id string) (VerifyRespon
 }
 
 func (s *Service) VerifyAudit(ctx context.Context) error {
-	if s.auditVerified.Load() {
-		return nil
-	}
 	records, e := s.Store.Audits(ctx)
 	if e != nil {
 		return e
 	}
-	if e = ledger.Verify(records); e != nil {
-		return e
-	}
-	s.auditVerified.Store(true)
-	return nil
+	return ledger.Verify(records)
 }
