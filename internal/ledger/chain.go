@@ -18,10 +18,8 @@ type auditWriter interface {
 }
 
 type Chain struct {
-	now    func() time.Time
-	mu     sync.Mutex
-	loaded bool
-	tail   string
+	now func() time.Time
+	mu  sync.Mutex
 }
 
 func NewChain(now func() time.Time) *Chain {
@@ -40,25 +38,21 @@ func eventHash(r persistence.AuditRecord) string {
 func (c *Chain) Append(ctx context.Context, w auditWriter, batchID, eventType string, payload any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.loaded {
-		previous, err := w.LastAudit(ctx)
-		if err != nil {
-			return err
-		}
-		c.tail = previous.EventHash
-		c.loaded = true
+	// 每次追加都从当前事务可见的审计表读取尾部哈希，而不是缓存上一次的结果。
+	// 审计记录在事务内暂存后可能因事务回滚而被丢弃；缓存尾部会让后续事件指向
+	// 从未提交的哈希，从而破坏审计链。从 writer（即当前事务）读取尾部可保证
+	// PreviousHash 始终反映已提交（或本事务内已暂存）的真实状态。
+	previous, err := w.LastAudit(ctx)
+	if err != nil {
+		return err
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	r := persistence.AuditRecord{EventID: NewID("evt"), BatchID: batchID, EventType: eventType, Payload: string(raw), PreviousHash: c.tail, OccurredAt: c.now().UTC()}
+	r := persistence.AuditRecord{EventID: NewID("evt"), BatchID: batchID, EventType: eventType, Payload: string(raw), PreviousHash: previous.EventHash, OccurredAt: c.now().UTC()}
 	r.EventHash = eventHash(r)
-	if err := w.InsertAudit(ctx, r); err != nil {
-		return err
-	}
-	c.tail = r.EventHash
-	return nil
+	return w.InsertAudit(ctx, r)
 }
 
 func Verify(records []persistence.AuditRecord) error {
