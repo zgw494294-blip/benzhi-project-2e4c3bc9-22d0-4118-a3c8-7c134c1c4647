@@ -36,12 +36,48 @@ func (t *Tx) InsertSnapshot(ctx context.Context, s domain.Snapshot) error {
 	_, e := t.tx.ExecContext(ctx, `INSERT INTO snapshots(batch_id,digest,frozen_at,payload) VALUES(?,?,?,?)`, s.Batch.BatchID, s.Digest, s.FrozenAt.Format(time.RFC3339Nano), string(b))
 	return e
 }
+func cloneSnapshot(s domain.Snapshot) domain.Snapshot {
+	out := s
+	if s.Pages != nil {
+		out.Pages = make([]domain.PageEvidence, len(s.Pages))
+		copy(out.Pages, s.Pages)
+	}
+	if s.Issues != nil {
+		out.Issues = make([]domain.QualityIssue, len(s.Issues))
+		copy(out.Issues, s.Issues)
+		for i := range out.Issues {
+			if s.Issues[i].ResolvedAt != nil {
+				t := *s.Issues[i].ResolvedAt
+				out.Issues[i].ResolvedAt = &t
+			}
+		}
+	}
+	if s.Quality != nil {
+		q := *s.Quality
+		if q.Issues != nil {
+			q.Issues = make([]domain.QualityIssue, len(s.Quality.Issues))
+			copy(q.Issues, s.Quality.Issues)
+			for i := range q.Issues {
+				if s.Quality.Issues[i].ResolvedAt != nil {
+					t := *s.Quality.Issues[i].ResolvedAt
+					q.Issues[i].ResolvedAt = &t
+				}
+			}
+		}
+		out.Quality = &q
+	}
+	if s.Manifest.Entries != nil {
+		out.Manifest.Entries = make([]domain.ManifestEntry, len(s.Manifest.Entries))
+		copy(out.Manifest.Entries, s.Manifest.Entries)
+	}
+	return out
+}
 func (s *Store) GetSnapshot(ctx context.Context, batchID string) (domain.Snapshot, error) {
 	s.snapshotMu.RLock()
 	cached, ok := s.snapshotCache[batchID]
 	s.snapshotMu.RUnlock()
 	if ok {
-		return cached, nil
+		return cloneSnapshot(cached), nil
 	}
 
 	var out domain.Snapshot
@@ -59,7 +95,7 @@ func (s *Store) GetSnapshot(ctx context.Context, batchID string) (domain.Snapsho
 		s.snapshotCache[batchID] = out
 		s.snapshotMu.Unlock()
 	}
-	return out, err
+	return cloneSnapshot(out), err
 }
 func (t *Tx) InsertCredential(ctx context.Context, c domain.ReleaseCredential) error {
 	_, e := t.tx.ExecContext(ctx, `INSERT INTO credentials(credential_id,batch_id,snapshot_digest,issued_to,issued_at,signature,revoked_at) VALUES(?,?,?,?,?,?,NULL)`, c.CredentialID, c.BatchID, c.SnapshotDigest, c.IssuedTo, c.IssuedAt.Format(time.RFC3339Nano), c.Signature)
