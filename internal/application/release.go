@@ -183,12 +183,25 @@ func (s *Service) VerifyCredential(ctx context.Context, id string) (VerifyRespon
 	s.verificationFlight[id] = pending
 	s.verificationMu.Unlock()
 
-	pending.response, pending.err = s.verifyCredential(ctx, id)
-	s.verificationMu.Lock()
-	delete(s.verificationFlight, id)
-	close(pending.done)
-	s.verificationMu.Unlock()
-	return pending.response, pending.err
+	// The shared verification work runs with a context detached from the
+	// caller so that one caller's cancellation cannot abort the work that
+	// other callers are waiting on. Each caller still honors its own
+	// cancellation status independently.
+	go func() {
+		resp, err := s.verifyCredential(context.WithoutCancel(ctx), id)
+		s.verificationMu.Lock()
+		pending.response, pending.err = resp, err
+		delete(s.verificationFlight, id)
+		close(pending.done)
+		s.verificationMu.Unlock()
+	}()
+
+	select {
+	case <-ctx.Done():
+		return VerifyResponse{}, ctx.Err()
+	case <-pending.done:
+		return pending.response, pending.err
+	}
 }
 
 func (s *Service) verifyCredential(ctx context.Context, id string) (VerifyResponse, error) {
