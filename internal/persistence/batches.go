@@ -67,5 +67,14 @@ func (t *Tx) UpdateBatch(ctx context.Context, b domain.DigitizationBatch, expect
 	if n != 1 {
 		return domain.VersionConflict("expectedVersion 与当前版本不一致")
 	}
+	if t.store != nil {
+		t.store.invalidateBatch(b.BatchID)
+	}
 	return nil
+}
+
+func (s *Store) invalidateBatch(id string) {
+	s.cacheMu.Lock()
+	delete(s.batchCache, id)
+	s.cacheMu.Unlock()
 }

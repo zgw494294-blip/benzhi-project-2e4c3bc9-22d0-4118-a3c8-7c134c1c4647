@@ -15,7 +15,10 @@ type Store struct {
 	cacheMu    sync.RWMutex
 	batchCache map[string]domain.DigitizationBatch
 }
-type Tx struct{ tx *sql.Tx }
+type Tx struct {
+	tx    *sql.Tx
+	store *Store
+}
 
 func Open(path string) (*Store, error) {
 	dsn := path
@@ -41,7 +44,7 @@ func (s *Store) Transact(ctx context.Context, fn func(*Tx) error) error {
 	if err != nil {
 		return err
 	}
-	wrapped := &Tx{tx: tx}
+	wrapped := &Tx{tx: tx, store: s}
 	if err := fn(wrapped); err != nil {
 		_ = tx.Rollback()
 		return err
