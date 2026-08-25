@@ -4,11 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 
 	_ "modernc.org/sqlite"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db *sql.DB
+
+	admissionMu      sync.Mutex
+	admissionContext context.Context
+}
 type Tx struct{ tx *sql.Tx }
 
 func Open(path string) (*Store, error) {
@@ -31,6 +37,15 @@ func Open(path string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) Transact(ctx context.Context, fn func(*Tx) error) error {
+	s.admissionMu.Lock()
+	if s.admissionContext == nil {
+		s.admissionContext = ctx
+	}
+	admissionContext := s.admissionContext
+	s.admissionMu.Unlock()
+	if err := admissionContext.Err(); err != nil {
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

@@ -16,7 +16,14 @@ func (t *Tx) InsertPage(ctx context.Context, p domain.PageEvidence) (string, err
 	id := evidenceID(p)
 	_, err := t.tx.ExecContext(ctx, `INSERT INTO pages(evidence_id,page_id,batch_id,sequence_no,image_digest,ocr_text,character_count,confidence,observed_at,revision) VALUES(?,?,?,?,?,?,?,?,?,?)`, id, p.PageID, p.BatchID, p.Sequence, p.ImageDigest, p.OCRText, p.CharacterCount, p.Confidence, p.ObservedAt.Format(time.RFC3339Nano), p.Revision)
 	if err != nil {
-		return "", domain.Conflict("页面证据修订已存在")
+		var coded interface{ Code() int }
+		if errors.As(err, &coded) {
+			switch coded.Code() {
+			case 1555, 2067: // SQLITE_CONSTRAINT_PRIMARYKEY, SQLITE_CONSTRAINT_UNIQUE
+				return "", domain.Conflict("页面证据修订已存在")
+			}
+		}
+		return "", err
 	}
 	return id, nil
 }
