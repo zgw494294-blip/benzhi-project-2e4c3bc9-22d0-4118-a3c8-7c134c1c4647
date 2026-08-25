@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"sync/atomic"
 	"time"
 
 	"github.com/benzhi-project/ancient-quality-gate/internal/ledger"
@@ -11,10 +12,11 @@ import (
 )
 
 type Service struct {
-	Store  *persistence.Store
-	Chain  *ledger.Chain
-	Signer *ledger.Signer
-	Now    func() time.Time
+	Store         *persistence.Store
+	Chain         *ledger.Chain
+	Signer        *ledger.Signer
+	Now           func() time.Time
+	auditVerified atomic.Bool
 }
 
 func New(store *persistence.Store, secret []byte) *Service {
