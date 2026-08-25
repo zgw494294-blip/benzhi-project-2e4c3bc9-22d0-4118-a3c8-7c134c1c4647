@@ -4,11 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 
 	_ "modernc.org/sqlite"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db                  *sql.DB
+	credentialMu        sync.Mutex
+	credentialOnce      sync.Once
+	credentialReader    *sql.Stmt
+	credentialReaderTx  *sql.Tx
+	credentialReaderErr error
+}
 type Tx struct{ tx *sql.Tx }
 
 func Open(path string) (*Store, error) {

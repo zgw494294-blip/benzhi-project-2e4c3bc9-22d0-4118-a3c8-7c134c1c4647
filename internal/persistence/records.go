@@ -54,10 +54,32 @@ func (t *Tx) InsertCredential(ctx context.Context, c domain.ReleaseCredential) e
 	return e
 }
 func (s *Store) GetCredential(ctx context.Context, id string) (domain.ReleaseCredential, error) {
+	s.credentialMu.Lock()
+	defer s.credentialMu.Unlock()
+	s.credentialOnce.Do(func() {
+		s.credentialReaderTx, s.credentialReaderErr = s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		if s.credentialReaderErr != nil {
+			return
+		}
+		s.credentialReader, s.credentialReaderErr = s.credentialReaderTx.PrepareContext(ctx, `SELECT credential_id,batch_id,snapshot_digest,issued_to,issued_at,signature,revoked_at FROM credentials WHERE credential_id=?`)
+		if s.credentialReaderErr != nil {
+			_ = s.credentialReaderTx.Rollback()
+			s.credentialReaderTx = nil
+		}
+	})
+	if s.credentialReaderErr != nil {
+		return domain.ReleaseCredential{}, s.credentialReaderErr
+	}
 	var c domain.ReleaseCredential
 	var issued string
 	var revoked sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT credential_id,batch_id,snapshot_digest,issued_to,issued_at,signature,revoked_at FROM credentials WHERE credential_id=?`, id).Scan(&c.CredentialID, &c.BatchID, &c.SnapshotDigest, &c.IssuedTo, &issued, &c.Signature, &revoked)
+	err := s.credentialReader.QueryRowContext(ctx, id).Scan(&c.CredentialID, &c.BatchID, &c.SnapshotDigest, &c.IssuedTo, &issued, &c.Signature, &revoked)
+	if s.credentialReaderTx != nil {
+		if commitErr := s.credentialReaderTx.Commit(); err == nil {
+			err = commitErr
+		}
+		s.credentialReaderTx = nil
+	}
 	if err == sql.ErrNoRows {
 		return c, domain.NotFound("发布凭据不存在")
 	}
