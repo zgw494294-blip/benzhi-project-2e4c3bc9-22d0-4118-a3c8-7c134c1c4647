@@ -67,6 +67,7 @@ func (s *Service) QualityCheck(ctx context.Context, c QualityCommand) (QualityRe
 		if e = b.BeginReview(); e != nil {
 			return e
 		}
+		b.UpdatedAt = s.Now()
 		if e = tx.UpdateBatch(ctx, b, expected); e != nil {
 			return e
 		}
@@ -130,6 +131,7 @@ func (s *Service) ResolveIssue(ctx context.Context, c ResolveCommand) (QualityRe
 		expected := b.Version
 		b.Status = domain.StatusReview
 		b.Version++
+		b.UpdatedAt = s.Now()
 		if e = tx.UpdateBatch(ctx, b, expected); e != nil {
 			return e
 		}

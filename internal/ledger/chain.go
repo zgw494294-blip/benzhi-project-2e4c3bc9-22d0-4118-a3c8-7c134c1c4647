@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/benzhi-project/ancient-quality-gate/internal/persistence"
@@ -16,7 +17,12 @@ type auditWriter interface {
 	InsertAudit(context.Context, persistence.AuditRecord) error
 }
 
-type Chain struct{ now func() time.Time }
+type Chain struct {
+	now    func() time.Time
+	mu     sync.Mutex
+	loaded bool
+	tail   string
+}
 
 func NewChain(now func() time.Time) *Chain {
 	if now == nil {
@@ -32,17 +38,27 @@ func eventHash(r persistence.AuditRecord) string {
 }
 
 func (c *Chain) Append(ctx context.Context, w auditWriter, batchID, eventType string, payload any) error {
-	previous, err := w.LastAudit(ctx)
-	if err != nil {
-		return err
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.loaded {
+		previous, err := w.LastAudit(ctx)
+		if err != nil {
+			return err
+		}
+		c.tail = previous.EventHash
+		c.loaded = true
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	r := persistence.AuditRecord{EventID: NewID("evt"), BatchID: batchID, EventType: eventType, Payload: string(raw), PreviousHash: previous.EventHash, OccurredAt: c.now().UTC()}
+	r := persistence.AuditRecord{EventID: NewID("evt"), BatchID: batchID, EventType: eventType, Payload: string(raw), PreviousHash: c.tail, OccurredAt: c.now().UTC()}
 	r.EventHash = eventHash(r)
-	return w.InsertAudit(ctx, r)
+	if err := w.InsertAudit(ctx, r); err != nil {
+		return err
+	}
+	c.tail = r.EventHash
+	return nil
 }
 
 func Verify(records []persistence.AuditRecord) error {

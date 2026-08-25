@@ -61,6 +61,7 @@ func (s *Service) AddPage(ctx context.Context, c AddPageCommand) (BatchResult, e
 		if e = b.MarkEvidence(); e != nil {
 			return e
 		}
+		b.UpdatedAt = s.Now()
 		if e = tx.UpdateBatch(ctx, b, expected); e != nil {
 			return e
 		}
@@ -110,6 +111,7 @@ func (s *Service) AddOCR(ctx context.Context, c AddOCRCommand) (BatchResult, err
 		if e = b.MarkEvidenceRevision(); e != nil {
 			return e
 		}
+		b.UpdatedAt = s.Now()
 		if e = tx.UpdateBatch(ctx, b, expected); e != nil {
 			return e
 		}

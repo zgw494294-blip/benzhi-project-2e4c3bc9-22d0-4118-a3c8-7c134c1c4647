@@ -88,6 +88,7 @@ func (s *Service) Review(ctx context.Context, c ReviewCommand) (ReviewResponse, 
 		if e != nil {
 			return e
 		}
+		b.UpdatedAt = s.Now()
 		if e = tx.UpdateBatch(ctx, b, expected); e != nil {
 			return e
 		}
@@ -145,6 +146,7 @@ func (s *Service) Freeze(ctx context.Context, c FreezeCommand) (FreezeResponse, 
 		if e = b.Freeze(); e != nil {
 			return e
 		}
+		b.UpdatedAt = s.Now()
 		if e = tx.UpdateBatch(ctx, b, expected); e != nil {
 			return e
 		}

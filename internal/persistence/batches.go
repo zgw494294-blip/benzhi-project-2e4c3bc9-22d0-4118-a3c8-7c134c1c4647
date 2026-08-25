@@ -45,7 +45,6 @@ func (s *Store) GetBatch(ctx context.Context, id string) (domain.DigitizationBat
 }
 
 func (t *Tx) UpdateBatch(ctx context.Context, b domain.DigitizationBatch, expected int64) error {
-	b.UpdatedAt = time.Now().UTC()
 	res, err := t.tx.ExecContext(ctx, `UPDATE batches SET status=?,version=?,updated_at=? WHERE batch_id=? AND version=?`, b.Status, b.Version, b.UpdatedAt.Format(time.RFC3339Nano), b.BatchID, expected)
 	if err != nil {
 		return err
