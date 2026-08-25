@@ -4,11 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 
+	"github.com/benzhi-project/ancient-quality-gate/internal/domain"
 	_ "modernc.org/sqlite"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db *sql.DB
+
+	snapshotMu    sync.RWMutex
+	snapshotCache map[string]domain.Snapshot
+}
 type Tx struct{ tx *sql.Tx }
 
 func Open(path string) (*Store, error) {
@@ -25,7 +32,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("迁移数据库: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, snapshotCache: make(map[string]domain.Snapshot)}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

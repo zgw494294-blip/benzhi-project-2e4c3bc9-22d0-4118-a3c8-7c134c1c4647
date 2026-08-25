@@ -37,6 +37,13 @@ func (t *Tx) InsertSnapshot(ctx context.Context, s domain.Snapshot) error {
 	return e
 }
 func (s *Store) GetSnapshot(ctx context.Context, batchID string) (domain.Snapshot, error) {
+	s.snapshotMu.RLock()
+	cached, ok := s.snapshotCache[batchID]
+	s.snapshotMu.RUnlock()
+	if ok {
+		return cached, nil
+	}
+
 	var out domain.Snapshot
 	var raw string
 	err := s.db.QueryRowContext(ctx, `SELECT payload FROM snapshots WHERE batch_id=?`, batchID).Scan(&raw)
@@ -47,6 +54,11 @@ func (s *Store) GetSnapshot(ctx context.Context, batchID string) (domain.Snapsho
 		return out, err
 	}
 	err = json.Unmarshal([]byte(raw), &out)
+	if err == nil {
+		s.snapshotMu.Lock()
+		s.snapshotCache[batchID] = out
+		s.snapshotMu.Unlock()
+	}
 	return out, err
 }
 func (t *Tx) InsertCredential(ctx context.Context, c domain.ReleaseCredential) error {
