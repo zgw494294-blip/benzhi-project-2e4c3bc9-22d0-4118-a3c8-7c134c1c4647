@@ -1,14 +1,19 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/benzhi-project/ancient-quality-gate/internal/application"
 	"github.com/benzhi-project/ancient-quality-gate/internal/domain"
 )
+
+var decodedBodyCache sync.Map
 
 type Server struct {
 	App *application.Service
@@ -35,7 +40,15 @@ func requestID(r *http.Request) string {
 }
 func decode(r *http.Request, v any) error {
 	defer r.Body.Close()
-	d := json.NewDecoder(r.Body)
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return domain.Invalid("读取请求体失败", "")
+	}
+	if key := strings.TrimSpace(r.Header.Get("Idempotency-Key")); key != "" {
+		cached, _ := decodedBodyCache.LoadOrStore(key, append([]byte(nil), raw...))
+		raw = cached.([]byte)
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
 		return domain.Invalid("请求体不是合法 JSON", "")
