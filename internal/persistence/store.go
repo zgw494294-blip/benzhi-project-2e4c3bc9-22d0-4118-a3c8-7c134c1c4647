@@ -4,12 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 
 	_ "modernc.org/sqlite"
 )
 
-type Store struct{ db *sql.DB }
-type Tx struct{ tx *sql.Tx }
+type Store struct {
+	db                 *sql.DB
+	cacheMu            sync.RWMutex
+	idempotencyCache   map[string]cachedIdempotency
+	pendingIdempotency []pendingIdempotency
+}
+type Tx struct {
+	tx    *sql.Tx
+	store *Store
+}
 
 func Open(path string) (*Store, error) {
 	dsn := path
@@ -25,7 +34,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("迁移数据库: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, idempotencyCache: make(map[string]cachedIdempotency)}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -35,12 +44,16 @@ func (s *Store) Transact(ctx context.Context, fn func(*Tx) error) error {
 	if err != nil {
 		return err
 	}
-	wrapped := &Tx{tx: tx}
+	wrapped := &Tx{tx: tx, store: s}
 	if err := fn(wrapped); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.publishIdempotency()
+	return nil
 }
 
 func (s *Store) DB() *sql.DB { return s.db }
