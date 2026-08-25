@@ -169,6 +169,29 @@ func (s *Service) Freeze(ctx context.Context, c FreezeCommand) (FreezeResponse, 
 }
 
 func (s *Service) VerifyCredential(ctx context.Context, id string) (VerifyResponse, error) {
+	s.verificationMu.Lock()
+	if pending, ok := s.verificationFlight[id]; ok {
+		s.verificationMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return VerifyResponse{}, ctx.Err()
+		case <-pending.done:
+			return pending.response, pending.err
+		}
+	}
+	pending := &credentialVerification{done: make(chan struct{})}
+	s.verificationFlight[id] = pending
+	s.verificationMu.Unlock()
+
+	pending.response, pending.err = s.verifyCredential(ctx, id)
+	s.verificationMu.Lock()
+	delete(s.verificationFlight, id)
+	close(pending.done)
+	s.verificationMu.Unlock()
+	return pending.response, pending.err
+}
+
+func (s *Service) verifyCredential(ctx context.Context, id string) (VerifyResponse, error) {
 	credential, e := s.Store.GetCredential(ctx, id)
 	if e != nil {
 		return VerifyResponse{}, e
