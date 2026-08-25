@@ -16,7 +16,10 @@ type auditWriter interface {
 	InsertAudit(context.Context, persistence.AuditRecord) error
 }
 
-type Chain struct{ now func() time.Time }
+type Chain struct {
+	now     func() time.Time
+	started bool
+}
 
 func NewChain(now func() time.Time) *Chain {
 	if now == nil {
@@ -32,9 +35,13 @@ func eventHash(r persistence.AuditRecord) string {
 }
 
 func (c *Chain) Append(ctx context.Context, w auditWriter, batchID, eventType string, payload any) error {
-	previous, err := w.LastAudit(ctx)
-	if err != nil {
-		return err
+	var previous persistence.AuditRecord
+	var err error
+	if c.started {
+		previous, err = w.LastAudit(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -42,7 +49,11 @@ func (c *Chain) Append(ctx context.Context, w auditWriter, batchID, eventType st
 	}
 	r := persistence.AuditRecord{EventID: NewID("evt"), BatchID: batchID, EventType: eventType, Payload: string(raw), PreviousHash: previous.EventHash, OccurredAt: c.now().UTC()}
 	r.EventHash = eventHash(r)
-	return w.InsertAudit(ctx, r)
+	if err := w.InsertAudit(ctx, r); err != nil {
+		return err
+	}
+	c.started = true
+	return nil
 }
 
 func Verify(records []persistence.AuditRecord) error {
