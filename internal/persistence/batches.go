@@ -41,7 +41,20 @@ func (t *Tx) GetBatch(ctx context.Context, id string) (domain.DigitizationBatch,
 }
 
 func (s *Store) GetBatch(ctx context.Context, id string) (domain.DigitizationBatch, error) {
-	return scanBatch(s.db.QueryRowContext(ctx, `SELECT batch_id,title,edition,owner,status,version,created_at,updated_at FROM batches WHERE batch_id=?`, id))
+	s.cacheMu.RLock()
+	if cached, ok := s.batchCache[id]; ok {
+		s.cacheMu.RUnlock()
+		return cached, nil
+	}
+	s.cacheMu.RUnlock()
+	b, err := scanBatch(s.db.QueryRowContext(ctx, `SELECT batch_id,title,edition,owner,status,version,created_at,updated_at FROM batches WHERE batch_id=?`, id))
+	if err != nil {
+		return b, err
+	}
+	s.cacheMu.Lock()
+	s.batchCache[id] = b
+	s.cacheMu.Unlock()
+	return b, nil
 }
 
 func (t *Tx) UpdateBatch(ctx context.Context, b domain.DigitizationBatch, expected int64) error {

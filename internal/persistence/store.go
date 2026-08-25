@@ -4,11 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 
+	"github.com/benzhi-project/ancient-quality-gate/internal/domain"
 	_ "modernc.org/sqlite"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db         *sql.DB
+	cacheMu    sync.RWMutex
+	batchCache map[string]domain.DigitizationBatch
+}
 type Tx struct{ tx *sql.Tx }
 
 func Open(path string) (*Store, error) {
@@ -25,7 +31,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("迁移数据库: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, batchCache: make(map[string]domain.DigitizationBatch)}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
